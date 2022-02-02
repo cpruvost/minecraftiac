@@ -6,15 +6,12 @@ pipeline {
 			args '-u root:root'
 		}
 	}
-	
-	//Parameters of the pipeline. You can define more parameters in this pipeline in order to have less hard code variables.
+
 	parameters {
-		//Jenkins Bugg with password so I used string for demo
-        //password(defaultValue: "xxxxxxxxxx", description: 'What is the vault token ?', name: 'VAULT_TOKEN')
 		string(defaultValue: "xxxxxxxxxx", description: 'What is the vault token ?', name: 'VAULT_TOKEN')
 		string(defaultValue: "130.61.125.xxx", description: 'What is the vault server IP Address ?', name: 'VAULT_SERVER_IP')
 		string(defaultValue: "demoatp", description: 'What is the vault secret name ?', name: 'VAULT_SECRET_NAME')  	
-		string(defaultValue: "https://objectstorage.eu-frankfurt-1.oraclecloud.com/p/9NwDrfPOqX5QIxYxv9NfkWmQXUAFzOtIC4pAsLI1KhtvxNywKkOA1M8eamVaydrY/n/oraseemeafrtech1/b/MinecraftHashitalk/o/terraform.tfstate", description: 'Where is stored the terraform state ?', name: 'TERRAFORM_STATE_URL')  
+		string(defaultValue: "nkTJ:EU-FRANKFURT-1-AD-2", description: 'What is the availibility domain ?', name: 'AVAILIBILITY_DOMAIN')  	
 		choice(name: 'CHOICE', choices: ['Create', 'Remove'], description: 'Choose between Create or Remove Infrastructure')
     }
 	
@@ -25,23 +22,14 @@ pipeline {
 		VAULT_SERVER_IP = "${params.VAULT_SERVER_IP}"
 		VAULT_ADDR = "http://${params.VAULT_SERVER_IP}:8200"
 		VAULT_SECRET_NAME = "${params.VAULT_SECRET_NAME}"
+		AVAILIBILITY_DOMAIN = "${params.AVAILIBILITY_DOMAIN}"
 		CHOICE = "${params.CHOICE}"
 		
 		//Terraform variables
 		TF_CLI_ARGS = "-no-color"
-		TF_VAR_terraform_state_url = "${params.TERRAFORM_STATE_URL}"
 	}
     
     stages {
-		//Only for debug due to Jenkins password bugg
-        /*stage('Check Vault Information') {
-            steps {
-				echo "${VAULT_TOKEN}"
-				echo "${VAULT_SERVER_IP}"
-				echo "${VAULT_ADDR}"
-				echo "${VAULT_SECRET_NAME}"
-            }
-        }*/
 
 		stage('Display User Name') {
 			agent any
@@ -74,9 +62,6 @@ pipeline {
 					env.DOCKERHUB_USERNAME = sh returnStdout: true, script: 'vault kv get -field=dockerhub_username secret/demoatp'
 					env.DOCKERHUB_PASSWORD = sh returnStdout: true, script: 'vault kv get -field=dockerhub_password secret/demoatp'
 					
-					//Terraform debugg option if problem
-					//env.TF_LOG="DEBUG"
-					//env.OCI_GO_SDK_DEBUG="v"
 				}
 				
 				//Check all cloud information.
@@ -85,39 +70,38 @@ pipeline {
 				echo "TF_VAR_fingerprint=${TF_VAR_fingerprint}"
 				echo "TF_VAR_compartment_ocid=${TF_VAR_compartment_ocid}"
 				echo "TF_VAR_region=${TF_VAR_region}"
-				echo "TF_VAR_terraform_state_url=${TF_VAR_terraform_state_url}"
 				echo "DOCKERHUB_USERNAME=${DOCKERHUB_USERNAME}"
 				echo "DOCKERHUB_PASSWORD=${DOCKERHUB_PASSWORD}"
 				//echo "KUBECONFIG=${KUBECONFIG}"
 				
-				dir ('./tf/modules/vm') {
-					script {
-						//Get the API and SSH encoded key Files with vault client because curl breaks the end line of the key file
-						sh 'vault kv get -field=api_private_key secret/demoatp | tr -d "\n" | base64 --decode > bmcs_api_key.pem'
-						sh 'vault kv get -field=ssh_private_key secret/demoatp | tr -d "\n" | base64 --decode > id_rsa'
-						sh 'vault kv get -field=ssh_public_key secret/demoatp | tr -d "\n" | base64 --decode > id_rsa.pub'
-						
-						//OCI CLI permissions mandatory on some files.
-						sh 'oci setup repair-file-permissions --file ./bmcs_api_key.pem'
-						
-						sh 'ls'
-						sh 'cat ./bmcs_api_key.pem'
-						sh 'cat ./id_rsa'
-						sh 'chmod 400 ./id_rsa'
-						sh 'cat ./id_rsa.pub'
-						
-						//Use private_key instead private_key_path
-						//env.TF_VAR_private_key_path = './bmcs_api_key.pem'
-						//echo "TF_VAR_private_key_path=${TF_VAR_private_key_path}"
-						env.TF_VAR_private_key=sh returnStdout: true, script: 'vault kv get -field=api_private_key secret/demoatp | tr -d "\n" | base64 --decode'
-						echo "TF_VAR_private_key=${TF_VAR_private_key}"
-						
-						env.TF_VAR_ssh_private_key = sh returnStdout: true, script: 'cat ./id_rsa'
-						echo "TF_VAR_ssh_private_key=${TF_VAR_ssh_private_key}"
-						env.TF_VAR_ssh_public_key = sh returnStdout: true, script: 'cat ./id_rsa.pub'
-						echo "TF_VAR_ssh_public_key=${TF_VAR_ssh_public_key}"
-					}
+				
+				script {
+					//Get the API and SSH encoded key Files with vault client because curl breaks the end line of the key file
+					sh 'vault kv get -field=api_private_key secret/demoatp | tr -d "\n" | base64 --decode > bmcs_api_key.pem'
+					sh 'vault kv get -field=ssh_private_key secret/demoatp | tr -d "\n" | base64 --decode > id_rsa'
+					sh 'vault kv get -field=ssh_public_key secret/demoatp | tr -d "\n" | base64 --decode > id_rsa.pub'
+					
+					//OCI CLI permissions mandatory on some files.
+					sh 'oci setup repair-file-permissions --file ./bmcs_api_key.pem'
+					
+					sh 'ls'
+					sh 'cat ./bmcs_api_key.pem'
+					sh 'cat ./id_rsa'
+					sh 'chmod 400 ./id_rsa'
+					sh 'cat ./id_rsa.pub'
+					
+					//Use private_key instead private_key_path
+					//env.TF_VAR_private_key_path = './bmcs_api_key.pem'
+					//echo "TF_VAR_private_key_path=${TF_VAR_private_key_path}"
+					env.TF_VAR_private_key=sh returnStdout: true, script: 'vault kv get -field=api_private_key secret/demoatp | tr -d "\n" | base64 --decode'
+					echo "TF_VAR_private_key=${TF_VAR_private_key}"
+					
+					env.TF_VAR_ssh_private_key = sh returnStdout: true, script: 'cat ./id_rsa'
+					echo "TF_VAR_ssh_private_key=${TF_VAR_ssh_private_key}"
+					env.TF_VAR_ssh_public_key = sh returnStdout: true, script: 'cat ./id_rsa.pub'
+					echo "TF_VAR_ssh_public_key=${TF_VAR_ssh_public_key}"
 				}
+				
 				
 				//OCI CLI Setup
 				sh 'mkdir -p /root/.oci'
@@ -125,7 +109,7 @@ pipeline {
 				sh 'echo "[DEFAULT]" > /root/.oci/config'
 				sh 'echo "user=${TF_VAR_user_ocid}" >> /root/.oci/config'
 				sh 'echo "fingerprint=${TF_VAR_fingerprint}" >> /root/.oci/config'
-				sh 'echo "key_file=./bmcs_api_key.pem" >> /root/.oci/config'
+				sh 'echo "key_file=/opt/bitnami/apps/jenkins/jenkins_home/jobs/MinecraftHashitalkDrift/workspace/bmcs_api_key.pem" >> /root/.oci/config'
 				sh 'echo "tenancy=${TF_VAR_tenancy_ocid}" >> /root/.oci/config'
 				sh 'echo "region=${TF_VAR_region}" >> /root/.oci/config'
 				sh 'cat /root/.oci/config'
@@ -135,48 +119,61 @@ pipeline {
             }
         }
 		
-		stage('TF Plan Minecraft VM') { 
+		stage('OCI RM Plan Minecraft VM') { 
             steps {
-				dir ('./tf/modules/vm') {
-					sh 'ls'
-					
-					//Terraform initialization in order to get oci plugin provider	
-					sh 'terraform init -reconfigure -backend-config="address=${TF_VAR_terraform_state_url}"'
-					
-					
-					script {
-						echo "CHOICE=${env.CHOICE}"
-					    //Terraform plan
-					    if (env.CHOICE == "Create") {
-							sh 'terraform plan -out myplan'
+				sh 'echo "{" > var.json'
+				sh 'echo "\\\""region\\\"": \\\""${TF_VAR_region}\\\""," >> var.json'
+				sh 'echo "\\\""tenancy_ocid\\\"": \\\""${TF_VAR_tenancy_ocid}\\\""," >> var.json'
+				sh 'echo "\\\""availability_domain\\\"": \\\""${AVAILIBILITY_DOMAIN}\\\""," >> var.json'
+				sh 'echo "\\\""compartment_ocid\\\"": \\\""${TF_VAR_compartment_ocid}\\\""," >> var.json'
+				sh 'echo "\\\""ssh_public_key\\\"": \\\""${TF_VAR_ssh_public_key}\\\""" >> var.json'
+				sh 'echo "}" >> var.json'
+				sh 'cat var.json'
+				
+
+				script {
+					echo "CHOICE=${env.CHOICE}"
+					//Terraform plan
+					if (env.CHOICE == "Create") {
+						env.CHECK_STACK_ID = sh returnStdout: true, script: 'oci resource-manager stack list -c $TF_VAR_compartment_ocid --display-name Hashitalk-drift --query "data[0].id" --raw-output'
+						if (env.CHECK_STACK_ID == "") {
+							env.CONFIG_SOURCE_PROVIDER_ID = sh returnStdout: true, script: 'oci resource-manager configuration-source-provider list -c $TF_VAR_compartment_ocid --query "data.items[0].id" --raw-output'
+							env.CHECK_STACK_ID = sh returnStdout: true, script: 'oci resource-manager stack create-from-git-provider -c $TF_VAR_compartment_ocid --config-source-configuration-source-provider-id $CONFIG_SOURCE_PROVIDER_ID --display-name Hashitalk-drift --config-source-repository-url https://github.com/cpruvost/minecraftiac.git --config-source-branch-name drift --variables file://var.json --terraform-version 1.0.x --query "data.id" --raw-output'
+							sh 'echo "Stack_id" : $CHECK_STACK_ID'
 						}
 						else {
-						    sh 'terraform plan -destroy -out myplan'
+							echo "STACK already exist"
 						}
+						env.PLAN_ID = sh returnStdout: true, script: 'oci resource-manager job create-plan-job --stack-id $CHECK_STACK_ID --wait-for-state SUCCEEDED --query "data.id" --raw-output'
+						sh 'oci resource-manager job get-job-logs --job-id $PLAN_ID --query "data[*].message" --raw-output --all'
+					}
+					else {
+						sh 'terraform plan -destroy -out myplan'
 					}
 				}
 			}
 		}
 		
-		stage('TF Apply Minecraft VM') { 
+ 		stage('OCI RM Apply Minecraft VM') { 
             steps {
-				dir ('./tf/modules/vm') {
-					sh 'ls'
+
+				script {				
+					echo "CHOICE=${env.CHOICE}"
 					
-					script {				
-						echo "CHOICE=${env.CHOICE}"
-						
-					    //Terraform plan
-					    if (env.CHOICE == "Create") {
-							sh 'terraform apply -input=false -auto-approve myplan'
-							sh 'terraform output -json | jq -r .instance_public_ips.value[0][0] > result.test'
-							env.VM_PUBLICIP = sh (script: 'cat ./result.test', returnStdout: true).trim()
-						}
-						else {
-						    sh 'terraform destroy -input=false -auto-approve'
-						}
+					//Terraform plan
+					if (env.CHOICE == "Create") {
+						env.JOB_ID = sh returnStdout: true, script: 'oci resource-manager job create-apply-job --stack-id $CHECK_STACK_ID --execution-plan-strategy FROM_PLAN_JOB_ID --execution-plan-job-id $PLAN_ID --wait-for-state SUCCEEDED --display-name "Minecraft apply" --query "data.id" --raw-output' 
+						sh 'oci resource-manager job get-job-logs --job-id $JOB_ID --query "data[*].message" --raw-output --all'
+						env.INSTANCE_ID = sh returnStdout: true, script: 'oci compute instance list -c $TF_VAR_compartment_ocid --display-name MinecraftHashitalkDrift0 --lifecycle-state RUNNING --query "data[0].id" --raw-output'
+						env.VM_PUBLICIP = sh (returnStdout: true, script: 'oci compute instance list-vnics --instance-id $INSTANCE_ID | jq -r ".data[].\\\""public-ip\\\"""').trim()
+						//sh 'terraform output -json | jq -r .instance_public_ips.value[0][0] > result.test'
+						//env.VM_PUBLICIP = sh (script: 'cat ./result.test', returnStdout: true).trim()
+					}
+					else {
+						sh 'terraform destroy -input=false -auto-approve'
 					}
 				}
+			
 			}
 		} 
 
@@ -213,16 +210,13 @@ pipeline {
 					script {				
 						echo "CHOICE=${env.CHOICE}"
 
-						/*environment {
-    						VM_PUBLICIP = "${env.VM_PUBLICIP}"
-  						}*/
+						
 
 						//Terraform plan
 						if (env.CHOICE == "Create") {
 							sh 'ls'
 							sh 'echo $VM_PUBLICIP'
 							sh 'sed -i \'s/ipaddressparam/\'$VM_PUBLICIP\'/\' ./hosts'
-							/*sh 'sed -i \'s/ipaddressparam/$VM_PUBLICIP/\' ./hosts'*/
 							sh 'cat ./hosts'
 							sh 'ansible all --list-hosts'
 							sh 'ansible-playbook ./minecraftprereq.yml --syntax-check'
@@ -236,6 +230,6 @@ pipeline {
 					}	
 				}
 			}
-		}
+		} 
 	}	   
 }
